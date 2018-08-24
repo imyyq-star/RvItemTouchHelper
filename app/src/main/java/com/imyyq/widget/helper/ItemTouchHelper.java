@@ -18,6 +18,7 @@ package com.imyyq.widget.helper;
 
 import android.animation.Animator;
 import android.animation.ValueAnimator;
+import android.annotation.SuppressLint;
 import android.content.res.Resources;
 import android.graphics.Canvas;
 import android.graphics.Rect;
@@ -66,6 +67,8 @@ import java.util.List;
  * <p/>
  * Most of the time you only need to override <code>onChildDraw</code>.
  */
+@SuppressWarnings({"WeakerAccess", "Convert2Diamond", "UnusedReturnValue", "unused"})
+@SuppressLint("PrivateResource")
 public class ItemTouchHelper extends RecyclerView.ItemDecoration
         implements RecyclerView.OnChildAttachStateChangeListener {
 
@@ -383,6 +386,12 @@ public class ItemTouchHelper extends RecyclerView.ItemDecoration
                     }
                     // fall through
                 case MotionEvent.ACTION_UP:
+                    // TODO 抬起来的时候，判断是否可以合并
+                    if (mMergePosition != null && mSelected != null)
+                    {
+                        mCallback.onMerge(mRecyclerView, mSelected.getAdapterPosition(),
+                                mMergePosition);
+                    }
                     select(null, ACTION_STATE_IDLE);
                     mActivePointerId = ACTIVE_POINTER_ID_NONE;
                     break;
@@ -628,6 +637,7 @@ public class ItemTouchHelper extends RecyclerView.ItemDecoration
                             // wait until remove animation is complete.
                             mPendingCleanup.add(prevSelected.itemView);
                             mIsPendingCleanup = true;
+                            //noinspection ConstantConditions
                             if (swipeDir > 0) {
                                 // Animation might be ended by other animators during a layout.
                                 // We defer callback to avoid editing adapter during a layout.
@@ -823,6 +833,8 @@ public class ItemTouchHelper extends RecyclerView.ItemDecoration
         return mSwapTargets;
     }
 
+    private Integer mMergePosition = null;
+
     /**
      * Checks if we should swap w/ another view holder.
      */
@@ -837,14 +849,23 @@ public class ItemTouchHelper extends RecyclerView.ItemDecoration
         final float threshold = mCallback.getMoveThreshold(viewHolder);
         final int x = (int) (mSelectedStartX + mDx);
         final int y = (int) (mSelectedStartY + mDy);
+        // TODO item移动没有在任何View上的时候，取消合并
         if (Math.abs(y - viewHolder.itemView.getTop()) < viewHolder.itemView.getHeight() * threshold
                 && Math.abs(x - viewHolder.itemView.getLeft())
                 < viewHolder.itemView.getWidth() * threshold) {
+            cancelMerge();
             return;
         }
         List<ViewHolder> swapTargets = findSwapTargets(viewHolder);
         if (swapTargets.size() == 0) {
+            cancelMerge();
             return;
+        }
+        if (swapTargets.size() == 1)
+        {
+            ViewHolder canMergeHolder = swapTargets.get(0);
+            mCallback.onMergeBefore(mRecyclerView, viewHolder, canMergeHolder);
+            mMergePosition = canMergeHolder.getAdapterPosition();
         }
         // may swap.
         ViewHolder target = mCallback.chooseDropTarget(viewHolder, swapTargets, x, y);
@@ -855,10 +876,21 @@ public class ItemTouchHelper extends RecyclerView.ItemDecoration
         }
         final int toPosition = target.getAdapterPosition();
         final int fromPosition = viewHolder.getAdapterPosition();
+        cancelMerge();
         if (mCallback.onMove(mRecyclerView, viewHolder, target)) {
             // keep target visible
             mCallback.onMoved(mRecyclerView, viewHolder, fromPosition,
                     target, toPosition, x, y);
+        }
+    }
+
+    // TODO 取消合并
+    private void cancelMerge()
+    {
+        if (mMergePosition != null)
+        {
+            mCallback.onCancelMerge(mMergePosition);
+            mMergePosition = null;
         }
     }
 
@@ -1299,6 +1331,7 @@ public class ItemTouchHelper extends RecyclerView.ItemDecoration
      * An interface which can be implemented by LayoutManager for better integration with
      * {@link ItemTouchHelper}.
      */
+    @SuppressWarnings("JavaDoc")
     public interface ViewDropHandler {
 
         /**
@@ -1353,7 +1386,7 @@ public class ItemTouchHelper extends RecyclerView.ItemDecoration
      * {@link #onSwiped(ViewHolder, int)}. At this point, you should update your
      * adapter (e.g. remove the item) and call related Adapter#notify event.
      */
-    @SuppressWarnings("UnusedParameters")
+    @SuppressWarnings({"UnusedParameters", "BooleanMethodIsAlwaysInverted"})
     public abstract static class Callback {
 
         public static final int DEFAULT_DRAG_ANIMATION_DURATION = 200;
@@ -1621,6 +1654,20 @@ public class ItemTouchHelper extends RecyclerView.ItemDecoration
          */
         public abstract boolean onMove(RecyclerView recyclerView,
                 ViewHolder viewHolder, ViewHolder target);
+
+        public void onMergeBefore(RecyclerView recyclerView, ViewHolder viewHolder,
+                                     ViewHolder target)
+        {
+        }
+
+        public boolean onMerge(RecyclerView recyclerView, int from, int to)
+        {
+            return false;
+        }
+
+        public void onCancelMerge(int position)
+        {
+        }
 
         /**
          * Returns whether ItemTouchHelper should start a drag and drop operation if an item is
